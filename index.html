@@ -31,7 +31,7 @@
     button:active { transform: scale(0.99); }
     .pill { display:inline-flex; align-items:center; gap:8px; padding:8px 10px; border-radius:999px; font-weight:700; }
     .pill.ok { background: rgba(70,230,162,0.12); border:1px solid rgba(70,230,162,0.35); color: var(--ok); }
-    .pill.warn { background: rgba(255,204,0,0.10); border:1px solid rgba(255,204,0,0.35); color: var (--warn); color: var(--warn); }
+    .pill.warn { background: rgba(255,204,0,0.10); border:1px solid rgba(255,204,0,0.35); color: var(--warn); }
     .pill.bad { background: rgba(255,77,77,0.10); border:1px solid rgba(255,77,77,0.35); color: var(--bad); }
     .grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:10px; }
     .metric { padding:10px 12px; border-radius:14px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); }
@@ -77,6 +77,7 @@
     .mapControls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px; }
     .mapControls .mini { padding:8px 10px; font-size: 13px; border-radius: 12px; }
     .badge { font-size:12px; color: var(--muted); }
+
     .iframeBox {
       height: 340px;
       border-radius: 14px;
@@ -87,10 +88,11 @@
     iframe { width:100%; height:100%; border:0; }
   </style>
 </head>
+
 <body>
   <header>
     <h1>Track Weather</h1>
-    <p class="sub" id="subtitle">Rain probability + wind + radar + satellite.</p>
+    <p class="sub">Rain probability + wind + radar + clouds/satellite.</p>
   </header>
 
   <div class="wrap">
@@ -168,15 +170,21 @@
 
     <div style="height:10px"></div>
 
-    <!-- NEW: Radar + Satellite -->
+    <!-- Visual: Radar + Clouds/Satellite -->
     <div class="card">
       <div class="split">
-        <div style="font-weight:800">Visual: Radar + Satellite</div>
+        <div style="font-weight:800">Visual: Radar + Clouds/Satellite</div>
         <div class="spacer"></div>
+
         <div class="tabs">
           <button class="tabbtn active" id="tabRadar">Radar</button>
-          <button class="tabbtn" id="tabSat">Satellite</button>
+          <button class="tabbtn" id="tabVis">Clouds</button>
         </div>
+
+        <select id="visMode" title="Visual mode" style="padding:8px 10px; font-size:13px;">
+          <option value="clouds" selected>Clouds</option>
+          <option value="satellite">Satellite</option>
+        </select>
       </div>
 
       <div class="panel active" id="panelRadar">
@@ -185,17 +193,20 @@
           <button class="mini" id="btnRadarPlay">Play</button>
           <button class="mini" id="btnRadarPause">Pause</button>
           <button class="mini" id="btnRadarReload">Reload radar frames</button>
+          <button class="mini" id="btnCenter">Center on coords</button>
           <div class="spacer"></div>
           <div class="badge" id="radarFrameInfo">Radar: —</div>
         </div>
-        <div class="note">Radar updates about every 10 minutes. If you’re out of coverage areas, radar tiles may be blank.</div>
+        <div class="note">Radar updates about every 10 minutes. If you’re outside coverage areas, radar tiles may be blank.</div>
       </div>
 
-      <div class="panel" id="panelSat">
+      <div class="panel" id="panelVis">
         <div class="iframeBox">
-          <iframe id="satFrame" src="https://zoom.earth/maps/satellite/" loading="lazy"></iframe>
+          <iframe id="windyFrame" loading="lazy"
+            referrerpolicy="no-referrer-when-downgrade"
+            src="about:blank"></iframe>
         </div>
-        <div class="note">If this panel shows blank, Zoom Earth is blocking iframe embeds. If that happens, tell me and I’ll swap to an embeddable satellite source.</div>
+        <div class="note">Tip: Clouds view is best for “clouds moving”. Satellite view is actual imagery.</div>
       </div>
     </div>
 
@@ -236,14 +247,12 @@
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
 <script>
-  // ======= Open-Meteo numbers (no key) =======
   const state = {
     lat: null,
     lon: null,
     timer: null,
     lastFetchMs: 0,
 
-    // Radar
     radar: {
       map: null,
       osm: null,
@@ -275,6 +284,7 @@
     return Number.isFinite(n) ? n : null;
   }
 
+  // ---------- Open-Meteo numbers ----------
   async function fetchWeather(lat, lon) {
     const url = new URL("https://api.open-meteo.com/v1/forecast");
     url.searchParams.set("latitude", lat);
@@ -314,12 +324,12 @@
     el("gustNow").textContent   = round0(gust);
 
     const h = data.hourly || {};
-    const times   = h.time || [];
-    const rainProb= h.precipitation_probability || [];
-    const rainMm  = h.precipitation || [];
-    const windH   = h.wind_speed_10m || [];
-    const gustH   = h.wind_gusts_10m || [];
-    const cloudH  = h.cloud_cover || [];
+    const times    = h.time || [];
+    const rainProb = h.precipitation_probability || [];
+    const rainMm   = h.precipitation || [];
+    const windH    = h.wind_speed_10m || [];
+    const gustH    = h.wind_gusts_10m || [];
+    const cloudH   = h.cloud_cover || [];
 
     const now = new Date();
     let startIdx = 0;
@@ -386,43 +396,12 @@
       render(data);
       state.lastFetchMs = Date.now();
 
-      // Keep radar centered on current coords
       ensureRadarMap();
       if (state.radar.map) state.radar.map.setView([Number(state.lat), Number(state.lon)], Math.max(state.radar.map.getZoom(), 6));
     } catch (err) {
       console.error(err);
       setStatus("bad", "Fetch failed (no signal?)");
     }
-  }
-
-  function setCoords(lat, lon, saveToInputs = true) {
-    state.lat = lat;
-    state.lon = lon;
-
-    if (saveToInputs) {
-      el("lat").value = lat;
-      el("lon").value = lon;
-    }
-    localStorage.setItem("trackweather.coords", JSON.stringify({ lat, lon }));
-
-    // Radar setup + refresh
-    ensureRadarMap();
-    refresh();
-    reloadRadarFrames(); // fetch radar frames once when location changes
-  }
-
-  function loadSaved() {
-    const saved = localStorage.getItem("trackweather.coords");
-    if (!saved) return;
-    try {
-      const obj = JSON.parse(saved);
-      if (obj && typeof obj.lat === "string" && typeof obj.lon === "string") {
-        el("lat").value = obj.lat;
-        el("lon").value = obj.lon;
-        state.lat = obj.lat;
-        state.lon = obj.lon;
-      }
-    } catch {}
   }
 
   function startAutoRefresh(minutes) {
@@ -438,33 +417,51 @@
     }, 5000);
   }
 
-  // ======= Tabs =======
+  // ---------- Tabs ----------
   function setTab(which) {
     const radarBtn = el("tabRadar");
-    const satBtn   = el("tabSat");
+    const visBtn   = el("tabVis");
     const radarPan = el("panelRadar");
-    const satPan   = el("panelSat");
+    const visPan   = el("panelVis");
 
     if (which === "radar") {
       radarBtn.classList.add("active");
-      satBtn.classList.remove("active");
+      visBtn.classList.remove("active");
       radarPan.classList.add("active");
-      satPan.classList.remove("active");
+      visPan.classList.remove("active");
       ensureRadarMap();
-      setTimeout(() => { if (state.radar.map) state.radar.map.invalidateSize(); }, 50);
+      setTimeout(() => { if (state.radar.map) state.radar.map.invalidateSize(); }, 60);
     } else {
-      satBtn.classList.add("active");
+      visBtn.classList.add("active");
       radarBtn.classList.remove("active");
-      satPan.classList.add("active");
+      visPan.classList.add("active");
       radarPan.classList.remove("active");
+      updateWindyEmbed(); // ensure iframe uses latest coords + selected overlay
     }
   }
 
-  el("tabRadar").addEventListener("click", () => setTab("radar"));
-  el("tabSat").addEventListener("click", () => setTab("sat"));
+  // ---------- Windy embed (Clouds/Satellite) ----------
+  function updateWindyEmbed() {
+    const lat = state.lat ?? "-26.2041";
+    const lon = state.lon ?? "28.0473";
+    const overlay = el("visMode")?.value || "clouds"; // clouds or satellite
 
-  // ======= Radar (RainViewer) =======
-  // Public API: https://api.rainviewer.com/public/weather-maps.json
+    const url =
+      "https://embed.windy.com/embed2.html" +
+      `?lat=${encodeURIComponent(lat)}` +
+      `&lon=${encodeURIComponent(lon)}` +
+      `&detailLat=${encodeURIComponent(lat)}` +
+      `&detailLon=${encodeURIComponent(lon)}` +
+      "&width=650&height=450&zoom=7&level=surface" +
+      `&overlay=${encodeURIComponent(overlay)}` +
+      "&menu=&message=&marker=&calendar=now&pressure=&type=map&location=coordinates&detail=" +
+      "&metricWind=km%2Fh&metricTemp=%C2%B0C&radarRange=-1";
+
+    const frame = el("windyFrame");
+    if (frame && frame.src !== url) frame.src = url;
+  }
+
+  // ---------- Radar (RainViewer) ----------
   async function fetchRadarMeta() {
     const res = await fetch("https://api.rainviewer.com/public/weather-maps.json", { cache: "no-store" });
     if (!res.ok) throw new Error(`Radar meta failed: ${res.status}`);
@@ -474,7 +471,6 @@
   function ensureRadarMap() {
     if (state.radar.map) return;
 
-    // Default center if coords not yet set
     const lat = state.lat ? Number(state.lat) : -26.2041;
     const lon = state.lon ? Number(state.lon) : 28.0473;
 
@@ -497,14 +493,11 @@
     state.radar.frameIndex = (index + state.radar.frames.length) % state.radar.frames.length;
     const frame = state.radar.frames[state.radar.frameIndex];
 
-    // Remove old layer
     if (state.radar.radarLayer) {
       state.radar.map.removeLayer(state.radar.radarLayer);
       state.radar.radarLayer = null;
     }
 
-    // Build tile URL:
-    // {host}{path}/256/{z}/{x}/{y}/2/1_1.png
     const url = `${state.radar.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`;
 
     state.radar.radarLayer = L.tileLayer(url, {
@@ -526,7 +519,6 @@
       const meta = await fetchRadarMeta();
       state.radar.host = meta.host;
 
-      // Use last ~12 frames (~2 hours) if available
       const frames = (meta?.radar?.past || []).slice(-12);
       state.radar.frames = frames;
 
@@ -535,7 +527,6 @@
         return;
       }
 
-      // Start on latest frame
       setRadarFrame(frames.length - 1);
     } catch (e) {
       console.error(e);
@@ -546,19 +537,63 @@
   function playRadar() {
     if (!state.radar.frames.length) return;
     stopRadarAnimation();
-
-    // Animate: step through frames every 700ms
-    state.radar.playTimer = setInterval(() => {
-      setRadarFrame(state.radar.frameIndex + 1);
-    }, 700);
+    state.radar.playTimer = setInterval(() => setRadarFrame(state.radar.frameIndex + 1), 700);
   }
 
-  // Radar controls
+  function centerOnCoords() {
+    if (!state.radar.map) return;
+    const lat = state.lat ? Number(state.lat) : -26.2041;
+    const lon = state.lon ? Number(state.lon) : 28.0473;
+    state.radar.map.setView([lat, lon], Math.max(state.radar.map.getZoom(), 8));
+  }
+
+  // ---------- Coords ----------
+  function setCoords(lat, lon, saveToInputs = true) {
+    state.lat = lat;
+    state.lon = lon;
+
+    if (saveToInputs) {
+      el("lat").value = lat;
+      el("lon").value = lon;
+    }
+
+    localStorage.setItem("trackweather.coords", JSON.stringify({ lat, lon }));
+
+    ensureRadarMap();
+    centerOnCoords();
+    updateWindyEmbed();
+    refresh();
+    reloadRadarFrames();
+  }
+
+  function loadSaved() {
+    const saved = localStorage.getItem("trackweather.coords");
+    if (!saved) return;
+    try {
+      const obj = JSON.parse(saved);
+      if (obj && typeof obj.lat === "string" && typeof obj.lon === "string") {
+        el("lat").value = obj.lat;
+        el("lon").value = obj.lon;
+        state.lat = obj.lat;
+        state.lon = obj.lon;
+      }
+    } catch {}
+  }
+
+  // ---------- UI wiring ----------
+  el("tabRadar").addEventListener("click", () => setTab("radar"));
+  el("tabVis").addEventListener("click", () => setTab("vis"));
+
+  el("visMode").addEventListener("change", () => {
+    updateWindyEmbed();
+    setTab("vis");
+  });
+
   el("btnRadarReload").addEventListener("click", reloadRadarFrames);
   el("btnRadarPlay").addEventListener("click", playRadar);
   el("btnRadarPause").addEventListener("click", stopRadarAnimation);
+  el("btnCenter").addEventListener("click", centerOnCoords);
 
-  // ======= UI events =======
   el("btnGPS").addEventListener("click", () => {
     if (!navigator.geolocation) {
       setStatus("bad", "GPS not supported");
@@ -591,20 +626,20 @@
   });
 
   el("btnRefresh").addEventListener("click", refresh);
-
   el("autoRefresh").addEventListener("change", (e) => startAutoRefresh(e.target.value));
 
-  // Init
+  // ---------- Init ----------
   loadSaved();
   startAutoRefresh(el("autoRefresh").value);
 
   if (state.lat !== null && state.lon !== null) {
     setStatus("warn", "Ready — tap Refresh");
     ensureRadarMap();
-    // Lazy load frames only if user already has coords saved
-    reloadRadarFrames();
+    updateWindyEmbed();     // make iframe available immediately
+    reloadRadarFrames();    // preload radar frames
   } else {
     setStatus("warn", "Tap Use GPS");
+    updateWindyEmbed();     // loads with default coords until GPS set
   }
 </script>
 </body>
