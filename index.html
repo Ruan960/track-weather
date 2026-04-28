@@ -5,11 +5,16 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Track Weather (Rain + Wind)</title>
   <meta name="theme-color" content="#111111" />
+
+  <!-- Leaflet (for Radar map) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
   <style>
     :root { --bg:#0b0c10; --card:#12141a; --muted:#9aa3b2; --txt:#e9eef7; --bad:#ff4d4d; --warn:#ffcc00; --ok:#46e6a2; }
     * { box-sizing: border-box; }
     body { margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial; background:var(--bg); color:var(--txt); }
-    header { padding:16px 14px 10px; position:sticky; top:0; background:linear-gradient(180deg, rgba(11,12,16,0.98), rgba(11,12,16,0.80)); backdrop-filter: blur(8px); }
+    header { padding:16px 14px 10px; position:sticky; top:0; background:linear-gradient(180deg, rgba(11,12,16,0.98), rgba(11,12,16,0.80)); backdrop-filter: blur(8px); z-index: 10; }
     h1 { font-size:16px; margin:0 0 6px; letter-spacing:.2px; }
     .sub { font-size:12px; color:var(--muted); margin:0; }
     .wrap { padding: 12px 12px 22px; max-width: 720px; margin: 0 auto; }
@@ -26,7 +31,7 @@
     button:active { transform: scale(0.99); }
     .pill { display:inline-flex; align-items:center; gap:8px; padding:8px 10px; border-radius:999px; font-weight:700; }
     .pill.ok { background: rgba(70,230,162,0.12); border:1px solid rgba(70,230,162,0.35); color: var(--ok); }
-    .pill.warn { background: rgba(255,204,0,0.10); border:1px solid rgba(255,204,0,0.35); color: var(--warn); }
+    .pill.warn { background: rgba(255,204,0,0.10); border:1px solid rgba(255,204,0,0.35); color: var (--warn); color: var(--warn); }
     .pill.bad { background: rgba(255,77,77,0.10); border:1px solid rgba(255,77,77,0.35); color: var(--bad); }
     .grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:10px; }
     .metric { padding:10px 12px; border-radius:14px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); }
@@ -46,12 +51,46 @@
     .good { color: var(--ok); font-weight: 700; }
     .note { font-size:12px; color:var(--muted); line-height:1.35; }
     .hr { height:1px; background: rgba(255,255,255,0.08); margin:10px 0; }
+
+    /* Tabs + panels */
+    .tabs { display:flex; gap:8px; align-items:center; }
+    .tabbtn {
+      padding:8px 10px; border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06);
+      font-weight: 800; font-size: 13px;
+    }
+    .tabbtn.active {
+      border-color: rgba(70,230,162,0.45);
+      background: rgba(70,230,162,0.12);
+      color: var(--ok);
+    }
+    .panel { display:none; margin-top:10px; }
+    .panel.active { display:block; }
+
+    #radarMap {
+      height: 340px;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .mapControls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+    .mapControls .mini { padding:8px 10px; font-size: 13px; border-radius: 12px; }
+    .badge { font-size:12px; color: var(--muted); }
+    .iframeBox {
+      height: 340px;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
+    }
+    iframe { width:100%; height:100%; border:0; }
   </style>
 </head>
 <body>
   <header>
     <h1>Track Weather</h1>
-    <p class="sub" id="subtitle">Rain probability + wind, using your GPS (or manual coords).</p>
+    <p class="sub" id="subtitle">Rain probability + wind + radar + satellite.</p>
   </header>
 
   <div class="wrap">
@@ -129,6 +168,39 @@
 
     <div style="height:10px"></div>
 
+    <!-- NEW: Radar + Satellite -->
+    <div class="card">
+      <div class="split">
+        <div style="font-weight:800">Visual: Radar + Satellite</div>
+        <div class="spacer"></div>
+        <div class="tabs">
+          <button class="tabbtn active" id="tabRadar">Radar</button>
+          <button class="tabbtn" id="tabSat">Satellite</button>
+        </div>
+      </div>
+
+      <div class="panel active" id="panelRadar">
+        <div id="radarMap"></div>
+        <div class="mapControls">
+          <button class="mini" id="btnRadarPlay">Play</button>
+          <button class="mini" id="btnRadarPause">Pause</button>
+          <button class="mini" id="btnRadarReload">Reload radar frames</button>
+          <div class="spacer"></div>
+          <div class="badge" id="radarFrameInfo">Radar: —</div>
+        </div>
+        <div class="note">Radar updates about every 10 minutes. If you’re out of coverage areas, radar tiles may be blank.</div>
+      </div>
+
+      <div class="panel" id="panelSat">
+        <div class="iframeBox">
+          <iframe id="satFrame" src="https://zoom.earth/maps/satellite/" loading="lazy"></iframe>
+        </div>
+        <div class="note">If this panel shows blank, Zoom Earth is blocking iframe embeds. If that happens, tell me and I’ll swap to an embeddable satellite source.</div>
+      </div>
+    </div>
+
+    <div style="height:10px"></div>
+
     <div class="card">
       <div class="split">
         <div style="font-weight:800">Next 6 hours</div>
@@ -154,26 +226,37 @@
 
       <div style="height:10px"></div>
       <div class="note">
-        Install tip (optional): open this file in Chrome on your phone → menu → <b>Add to Home screen</b>.
-        Then it behaves like a simple “app”.
+        Install tip: open your GitHub Pages link in Chrome on your phone → menu → <b>Add to Home screen</b>.
       </div>
     </div>
   </div>
 
+  <!-- Leaflet JS (for Radar map) -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
 <script>
-  // ----- Open-Meteo "no key" endpoint (free, great for personal use) -----
-  // Docs: https://open-meteo.com/
-  // We'll use: current + hourly precipitation probability, wind, gusts, cloud cover.
+  // ======= Open-Meteo numbers (no key) =======
   const state = {
     lat: null,
     lon: null,
     timer: null,
-    lastFetchMs: 0
+    lastFetchMs: 0,
+
+    // Radar
+    radar: {
+      map: null,
+      osm: null,
+      radarLayer: null,
+      frames: [],
+      frameIndex: 0,
+      playTimer: null,
+      host: null
+    }
   };
 
   const el = (id) => document.getElementById(id);
 
-  function kmh(ms) { return Math.round((ms ?? 0) * 3.6); }
   function round1(x) { return (x === null || x === undefined) ? "—" : (Math.round(x * 10) / 10).toFixed(1); }
   function round0(x) { return (x === null || x === undefined) ? "—" : String(Math.round(x)); }
 
@@ -183,11 +266,9 @@
     p.classList.add(kind);
     p.textContent = text;
   }
-
   function setUpdated(tsLocal) {
     el("updatedAt").textContent = tsLocal ? `Updated: ${tsLocal}` : "—";
   }
-
   function parseNumber(v) {
     if (v === null || v === undefined) return null;
     const n = Number(v);
@@ -208,14 +289,10 @@
     return await res.json();
   }
 
-  function decidePill(rainChanceNextHour, precipNowMm, windKmh, gustKmh) {
-    // Simple "track" interpretation (you can tweak):
-    // - BAD if rain chance >= 60% OR precip now >= 0.5mm
-    // - WARN if rain chance 30–59% OR gusts >= 45 km/h
-    // - OK otherwise
+  function decidePill(rainChanceNextHour, precipNowMm, gustKmh) {
     const rc = rainChanceNextHour ?? 0;
     const pn = precipNowMm ?? 0;
-    const g = gustKmh ?? 0;
+    const g  = gustKmh ?? 0;
 
     if (pn >= 0.5 || rc >= 60) return { kind: "bad", text: "High rain risk" };
     if (rc >= 30 || g >= 45) return { kind: "warn", text: "Caution: possible rain / gusts" };
@@ -223,30 +300,27 @@
   }
 
   function render(data) {
-    // Current
     const cur = data.current || {};
-    const temp = parseNumber(cur.temperature_2m);
+    const temp   = parseNumber(cur.temperature_2m);
     const precip = parseNumber(cur.precipitation);
-    const cloud = parseNumber(cur.cloud_cover);
-    const wind = parseNumber(cur.wind_speed_10m);
-    const gust = parseNumber(cur.wind_gusts_10m);
+    const cloud  = parseNumber(cur.cloud_cover);
+    const wind   = parseNumber(cur.wind_speed_10m);
+    const gust   = parseNumber(cur.wind_gusts_10m);
 
-    el("tempNow").textContent = round1(temp);
+    el("tempNow").textContent   = round1(temp);
     el("precipNow").textContent = round1(precip);
-    el("cloudNow").textContent = round0(cloud);
-    el("windNow").textContent = round0(wind);
-    el("gustNow").textContent = round0(gust);
+    el("cloudNow").textContent  = round0(cloud);
+    el("windNow").textContent   = round0(wind);
+    el("gustNow").textContent   = round0(gust);
 
-    // Hourly (pick next 6 hours from "now")
     const h = data.hourly || {};
-    const times = h.time || [];
-    const rainProb = h.precipitation_probability || [];
-    const rainMm = h.precipitation || [];
-    const windH = h.wind_speed_10m || [];
-    const gustH = h.wind_gusts_10m || [];
-    const cloudH = h.cloud_cover || [];
+    const times   = h.time || [];
+    const rainProb= h.precipitation_probability || [];
+    const rainMm  = h.precipitation || [];
+    const windH   = h.wind_speed_10m || [];
+    const gustH   = h.wind_gusts_10m || [];
+    const cloudH  = h.cloud_cover || [];
 
-    // Find index of closest hour >= now
     const now = new Date();
     let startIdx = 0;
     for (let i = 0; i < times.length; i++) {
@@ -254,15 +328,12 @@
       if (t >= now) { startIdx = i; break; }
     }
 
-    // Next hour rain chance (first row)
     const rc1 = parseNumber(rainProb[startIdx]);
     el("rainChance").textContent = round0(rc1);
 
-    // Status pill
-    const pill = decidePill(rc1, precip, wind, gust);
+    const pill = decidePill(rc1, precip, gust);
     setStatus(pill.kind, pill.text);
 
-    // Table
     const tbody = el("hoursTbody");
     tbody.innerHTML = "";
     const maxRows = Math.min(6, times.length - startIdx);
@@ -271,42 +342,37 @@
       const tr = document.createElement("tr");
       tr.innerHTML = `<td colspan="6" class="muted">No hourly data.</td>`;
       tbody.appendChild(tr);
-      return;
+    } else {
+      for (let r = 0; r < maxRows; r++) {
+        const i = startIdx + r;
+        const t = new Date(times[i]);
+        const hhmm = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+        const rp = parseNumber(rainProb[i]);
+        const rm = parseNumber(rainMm[i]);
+        const w  = parseNumber(windH[i]);
+        const g  = parseNumber(gustH[i]);
+        const c  = parseNumber(cloudH[i]);
+
+        let rainCell = round0(rp);
+        if ((rp ?? 0) >= 60) rainCell = `<span class="danger">${rainCell}</span>`;
+        else if ((rp ?? 0) >= 30) rainCell = `<span style="color: var(--warn); font-weight:700">${rainCell}</span>`;
+        else rainCell = `<span class="good">${rainCell}</span>`;
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${hhmm}</td>
+          <td class="right">${rainCell}</td>
+          <td class="right">${round1(rm)}</td>
+          <td class="right">${round0(w)}</td>
+          <td class="right">${round0(g)}</td>
+          <td class="right">${round0(c)}</td>
+        `;
+        tbody.appendChild(tr);
+      }
     }
 
-    for (let r = 0; r < maxRows; r++) {
-      const i = startIdx + r;
-      const t = new Date(times[i]);
-      const hhmm = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-      const rp = parseNumber(rainProb[i]);
-      const rm = parseNumber(rainMm[i]);
-      const w = parseNumber(windH[i]);
-      const g = parseNumber(gustH[i]);
-      const c = parseNumber(cloudH[i]);
-
-      const tr = document.createElement("tr");
-
-      // Light highlight if rain probability high
-      let rainCell = round0(rp);
-      if ((rp ?? 0) >= 60) rainCell = `<span class="danger">${rainCell}</span>`;
-      else if ((rp ?? 0) >= 30) rainCell = `<span style="color: var(--warn); font-weight:700">${rainCell}</span>`;
-      else rainCell = `<span class="good">${rainCell}</span>`;
-
-      tr.innerHTML = `
-        <td>${hhmm}</td>
-        <td class="right">${rainCell}</td>
-        <td class="right">${round1(rm)}</td>
-        <td class="right">${round0(w)}</td>
-        <td class="right">${round0(g)}</td>
-        <td class="right">${round0(c)}</td>
-      `;
-      tbody.appendChild(tr);
-    }
-
-    // Updated timestamp
-    const updated = new Date().toLocaleString();
-    setUpdated(updated);
+    setUpdated(new Date().toLocaleString());
   }
 
   async function refresh() {
@@ -314,12 +380,15 @@
       setStatus("warn", "Set location first");
       return;
     }
-
     try {
       setStatus("warn", "Fetching weather…");
       const data = await fetchWeather(state.lat, state.lon);
       render(data);
       state.lastFetchMs = Date.now();
+
+      // Keep radar centered on current coords
+      ensureRadarMap();
+      if (state.radar.map) state.radar.map.setView([Number(state.lat), Number(state.lon)], Math.max(state.radar.map.getZoom(), 6));
     } catch (err) {
       console.error(err);
       setStatus("bad", "Fetch failed (no signal?)");
@@ -329,12 +398,17 @@
   function setCoords(lat, lon, saveToInputs = true) {
     state.lat = lat;
     state.lon = lon;
+
     if (saveToInputs) {
       el("lat").value = lat;
       el("lon").value = lon;
     }
     localStorage.setItem("trackweather.coords", JSON.stringify({ lat, lon }));
+
+    // Radar setup + refresh
+    ensureRadarMap();
     refresh();
+    reloadRadarFrames(); // fetch radar frames once when location changes
   }
 
   function loadSaved() {
@@ -359,13 +433,132 @@
     if (!Number.isFinite(m) || m <= 0) return;
 
     state.timer = setInterval(() => {
-      // tiny guard: don’t spam if user taps refresh repeatedly
       const since = Date.now() - state.lastFetchMs;
       if (since >= (m * 60 * 1000) - 2000) refresh();
     }, 5000);
   }
 
-  // UI events
+  // ======= Tabs =======
+  function setTab(which) {
+    const radarBtn = el("tabRadar");
+    const satBtn   = el("tabSat");
+    const radarPan = el("panelRadar");
+    const satPan   = el("panelSat");
+
+    if (which === "radar") {
+      radarBtn.classList.add("active");
+      satBtn.classList.remove("active");
+      radarPan.classList.add("active");
+      satPan.classList.remove("active");
+      ensureRadarMap();
+      setTimeout(() => { if (state.radar.map) state.radar.map.invalidateSize(); }, 50);
+    } else {
+      satBtn.classList.add("active");
+      radarBtn.classList.remove("active");
+      satPan.classList.add("active");
+      radarPan.classList.remove("active");
+    }
+  }
+
+  el("tabRadar").addEventListener("click", () => setTab("radar"));
+  el("tabSat").addEventListener("click", () => setTab("sat"));
+
+  // ======= Radar (RainViewer) =======
+  // Public API: https://api.rainviewer.com/public/weather-maps.json
+  async function fetchRadarMeta() {
+    const res = await fetch("https://api.rainviewer.com/public/weather-maps.json", { cache: "no-store" });
+    if (!res.ok) throw new Error(`Radar meta failed: ${res.status}`);
+    return await res.json();
+  }
+
+  function ensureRadarMap() {
+    if (state.radar.map) return;
+
+    // Default center if coords not yet set
+    const lat = state.lat ? Number(state.lat) : -26.2041;
+    const lon = state.lon ? Number(state.lon) : 28.0473;
+
+    state.radar.map = L.map("radarMap", { zoomControl: true }).setView([lat, lon], 6);
+
+    state.radar.osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap"
+    }).addTo(state.radar.map);
+  }
+
+  function stopRadarAnimation() {
+    if (state.radar.playTimer) clearInterval(state.radar.playTimer);
+    state.radar.playTimer = null;
+  }
+
+  function setRadarFrame(index) {
+    if (!state.radar.frames.length || !state.radar.host) return;
+
+    state.radar.frameIndex = (index + state.radar.frames.length) % state.radar.frames.length;
+    const frame = state.radar.frames[state.radar.frameIndex];
+
+    // Remove old layer
+    if (state.radar.radarLayer) {
+      state.radar.map.removeLayer(state.radar.radarLayer);
+      state.radar.radarLayer = null;
+    }
+
+    // Build tile URL:
+    // {host}{path}/256/{z}/{x}/{y}/2/1_1.png
+    const url = `${state.radar.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`;
+
+    state.radar.radarLayer = L.tileLayer(url, {
+      opacity: 0.75,
+      zIndex: 1000,
+      maxZoom: 7
+    }).addTo(state.radar.map);
+
+    const t = new Date(frame.time * 1000);
+    el("radarFrameInfo").textContent = `Radar: ${t.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}`;
+  }
+
+  async function reloadRadarFrames() {
+    try {
+      ensureRadarMap();
+      stopRadarAnimation();
+      el("radarFrameInfo").textContent = "Radar: loading…";
+
+      const meta = await fetchRadarMeta();
+      state.radar.host = meta.host;
+
+      // Use last ~12 frames (~2 hours) if available
+      const frames = (meta?.radar?.past || []).slice(-12);
+      state.radar.frames = frames;
+
+      if (!frames.length) {
+        el("radarFrameInfo").textContent = "Radar: no frames";
+        return;
+      }
+
+      // Start on latest frame
+      setRadarFrame(frames.length - 1);
+    } catch (e) {
+      console.error(e);
+      el("radarFrameInfo").textContent = "Radar: failed";
+    }
+  }
+
+  function playRadar() {
+    if (!state.radar.frames.length) return;
+    stopRadarAnimation();
+
+    // Animate: step through frames every 700ms
+    state.radar.playTimer = setInterval(() => {
+      setRadarFrame(state.radar.frameIndex + 1);
+    }, 700);
+  }
+
+  // Radar controls
+  el("btnRadarReload").addEventListener("click", reloadRadarFrames);
+  el("btnRadarPlay").addEventListener("click", playRadar);
+  el("btnRadarPause").addEventListener("click", stopRadarAnimation);
+
+  // ======= UI events =======
   el("btnGPS").addEventListener("click", () => {
     if (!navigator.geolocation) {
       setStatus("bad", "GPS not supported");
@@ -399,9 +592,7 @@
 
   el("btnRefresh").addEventListener("click", refresh);
 
-  el("autoRefresh").addEventListener("change", (e) => {
-    startAutoRefresh(e.target.value);
-  });
+  el("autoRefresh").addEventListener("change", (e) => startAutoRefresh(e.target.value));
 
   // Init
   loadSaved();
@@ -409,6 +600,9 @@
 
   if (state.lat !== null && state.lon !== null) {
     setStatus("warn", "Ready — tap Refresh");
+    ensureRadarMap();
+    // Lazy load frames only if user already has coords saved
+    reloadRadarFrames();
   } else {
     setStatus("warn", "Tap Use GPS");
   }
